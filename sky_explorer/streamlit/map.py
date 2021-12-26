@@ -27,10 +27,7 @@ class MapRenderer:
         )
         self._map = None
 
-    def draw(self, states: pd.DataFrame):
-        df = states.assign(icon_data=[self._icon_data] * len(states.index))
-        self._icon_layer.data = df
-        self._deck.update()
+    def draw(self):
         self._map = st.pydeck_chart(self._deck)
 
     def update(self, states: pd.DataFrame):

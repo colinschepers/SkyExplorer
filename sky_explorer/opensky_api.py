@@ -25,13 +25,13 @@ class OpenSkyApi:
         "callsign": lambda x: str(x).strip(),
         "origin_country": str,
         "time_position": lambda x: datetime.fromtimestamp(x) if x else None,
-        "last_contact": lambda x: datetime.fromtimestamp(x) if x else None,
+        "last_contact": None,
         "longitude": lambda x: float(x) if x else None,
         "latitude": lambda x: float(x) if x else None,
         "baro_altitude": lambda x: float(x) if x else 0,
         "on_ground": bool,
         "velocity": lambda x: float(x) if x else 0,
-        "azimuth": lambda x: -float(x) if x else None,
+        "azimuth": lambda x: 360 - float(x) if x else None,
         "vertical_rate": None,
         "sensors": None,
         "geo_altitude": None,
@@ -49,26 +49,11 @@ class OpenSkyApi:
             password: Optional[str] = None
     ) -> None:
         self._auth = (username, password) if username is not None else ()
-        self._last_requests = defaultdict(float)
         self._session = requests.Session()
 
-    def _check_rate_limit(self, url: str):
-        """Impose client-side rate limit
-
-        :param url: the api url to evaluate
-        """
-        if len(self._auth) < 2:
-            return abs(time.time() - self._last_requests[url]) >= self.TIME_DIFF_NO_AUTH
-        else:
-            return abs(time.time() - self._last_requests[url]) >= self.TIME_DIFF_AUTH
-
     def _get_json(self, url_suffix: str, params: Mapping[str, str] = None):
-        if not self._check_rate_limit(url_suffix):
-            raise ValueError("Request blocked due to rate limit")
-
         response = requests.get(f"{self.BASE_URL}{url_suffix}", auth=self._auth, params=params, timeout=15)
         if response.status_code == 200:
-            self._last_requests[url_suffix] = time.time()
             return response.json()
         else:
             LOGGER.debug(f"Response not OK. Status {response.status_code} - {response.reason}")
@@ -115,7 +100,7 @@ class OpenSkyApi:
 
         if json := self._get_json("/states/all", params=params):
             data = [self._parse_instance(x, self.STATE_COLUMNS) for x in json["states"]]
-            return pd.DataFrame(data).dropna()
+            return pd.DataFrame(data).dropna().set_index('icao24')
         return None
 
     def get_tracks(
@@ -342,22 +327,3 @@ class OpenSkyApi:
     @staticmethod
     def _parse_instance(instance: Sequence[Any], fields: Mapping[str, Callable]):
         return {name: func(value) for value, (name, func) in zip(instance, fields.items()) if func}
-
-
-class CachedOpenSkyApi(OpenSkyApi):
-    """Wrapper for OpenSkyApi caching data for the rate limit time.
-        """
-
-    def __init__(self, username: str = None, password: str = None):
-        super().__init__(username, password)
-        self._cache = defaultdict(lambda: None)
-
-    def get_states(
-            self,
-            time: Optional[datetime] = None,
-            icao24: Optional[str] = None,
-            bounds: Optional[Tuple[float, float, float, float]] = None,
-    ) -> Optional[pd.DataFrame]:
-        if self._check_rate_limit("/states/all"):
-            self._cache["/states/all"] = super().get_states(time, icao24, bounds)
-        return self._cache["/states/all"]
