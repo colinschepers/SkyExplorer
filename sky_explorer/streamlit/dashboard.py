@@ -1,12 +1,24 @@
 import asyncio
 from operator import attrgetter
+from typing import Optional
 
 import pandas as pd
 import streamlit as st
 
+from sky_explorer.airports import AirportProvider
 from sky_explorer.config import CONFIG
 from sky_explorer.opensky_api import OpenSkyApi
 from sky_explorer.streamlit.map import MapRenderer, MapStyle
+
+
+@st.cache(allow_output_mutation=True, show_spinner=False)
+def get_airport_provider():
+    return AirportProvider()
+
+
+@st.cache(allow_output_mutation=True, show_spinner=False)
+def get_airports() -> pd.DataFrame:
+    return get_airport_provider().airports
 
 
 @st.cache(allow_output_mutation=True, show_spinner=False)
@@ -15,13 +27,14 @@ def get_open_sky_api():
 
 
 @st.cache(allow_output_mutation=True, show_spinner=False, ttl=CONFIG["refresh_delay"])
-def get_states():
+def get_states() -> Optional[pd.DataFrame]:
     return get_open_sky_api().get_states()
 
 
 class Dashboard:
     def __init__(self):
-        self._st_dataframe = None
+        self._st_states = None
+        self._st_airports = None
         self._map_renderer = MapRenderer()
         self._callsign = None
         self._origin_countries = None
@@ -29,6 +42,7 @@ class Dashboard:
         self._latitude = None
         self._altitude = None
         self._velocity = None
+        self._azimuth = None
 
     def run(self):
         states = get_states()
@@ -67,8 +81,12 @@ class Dashboard:
             )
 
         st.title("Sky Explorer")
-        self._st_dataframe = st.empty()
+
+        self._st_states = st.empty()
         self._map_renderer.draw(map_style)
+
+        st.subheader("Airports")
+        self._st_airports = st.dataframe(get_airports())
 
         if live_view:
             asyncio.run(self._update_continuously())
@@ -87,7 +105,7 @@ class Dashboard:
             mask &= states['origin_country'].isin(self._origin_countries)
 
         states = states[mask]
-        self._st_dataframe.dataframe(states)
+        self._st_states.dataframe(states)
         self._map_renderer.update(states)
 
     async def _update_continuously(self):

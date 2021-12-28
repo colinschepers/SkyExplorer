@@ -1,3 +1,4 @@
+data_dir: data/
 refresh_delay: 10
 map:
   airplane:
