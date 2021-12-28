@@ -1,8 +1,17 @@
+from enum import Enum
+
 import pandas as pd
 import pydeck as pdk
 import streamlit as st
 
 from sky_explorer.config import CONFIG
+
+
+class MapStyle(Enum):
+    Streets = "satellite-streets-v11"
+    Satellite = "satellite-v9"
+    Light = "light-v10"
+    Dark = "dark-v10"
 
 
 class MapRenderer:
@@ -21,11 +30,15 @@ class MapRenderer:
         )
         self._deck = pdk.Deck(
             layers=[self._icon_layer],
-            map_style="mapbox://styles/mapbox/satellite-v9",
+            map_style=f"mapbox://styles/mapbox/{MapStyle.Streets.value}",
             initial_view_state=self._view_state,
             tooltip={"text": "{callsign}"}
         )
         self._map = None
+
+    def set_style(self, map_style: MapStyle):
+        self._deck.map_style = f"mapbox://styles/mapbox/{map_style.value}"
+        self._deck.update()
 
     def draw(self):
         self._map = st.pydeck_chart(self._deck)

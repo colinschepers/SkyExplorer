@@ -13,7 +13,6 @@ st.markdown(
     <style>
         #MainMenu {visibility: hidden;}
         footer {visibility: hidden;}
-        .StatusWidget-enter-done {visibility: hidden;}
         .block-container {padding: 1rem;}
     </style>
     """,

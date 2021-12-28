@@ -1,11 +1,12 @@
 import asyncio
+from operator import attrgetter
 
 import pandas as pd
 import streamlit as st
 
 from sky_explorer.config import CONFIG
 from sky_explorer.opensky_api import OpenSkyApi
-from sky_explorer.streamlit.map import MapRenderer
+from sky_explorer.streamlit.map import MapRenderer, MapStyle
 
 
 @st.cache(allow_output_mutation=True, show_spinner=False)
@@ -20,11 +21,12 @@ def get_states():
 
 class Dashboard:
     def __init__(self):
-        self._map_renderer = MapRenderer()
         self._st_dataframe = None
-        self._callsign = None
-        self._origin_countries = []
-        self._should_update_continuously = True
+        self._callsign = st.session_state.get("callsign", None)
+        self._origin_countries = st.session_state.get("origin_countries", [])
+        self._should_update_continuously = st.session_state.get("should_update_continuously", True)
+        self._map_style = st.session_state.get("map_style", None)
+        self._map_renderer = MapRenderer()
 
     def run(self):
         states = get_states()
@@ -33,10 +35,11 @@ class Dashboard:
         st.title("Sky Explorer")
         self._st_dataframe = st.empty()
         self._map_renderer.draw()
-        self._update(states)
 
         if self._should_update_continuously:
             asyncio.run(self._update_continuously())
+        else:
+            self._update(states)
 
     def render_sidebar(self, states: pd.DataFrame):
         with st.sidebar:
@@ -49,8 +52,19 @@ class Dashboard:
             ))
 
             st.subheader("Settings")
-            self._should_update_continuously = st.checkbox("Update continuously", value=True,
-                                                           key="_should_update_continuously")
+            self._should_update_continuously = st.checkbox(
+                label="Update continuously",
+                value=True,
+                key="should_update_continuously"
+            )
+
+            self._map_style = st.selectbox(
+                label="Map style",
+                options=MapStyle,
+                format_func=attrgetter('name'),
+                key="map_style"
+            )
+            self._map_renderer.set_style(self._map_style)
 
     def _update(self, states: pd.DataFrame):
         if self._callsign:
@@ -61,6 +75,10 @@ class Dashboard:
         self._map_renderer.update(states)
 
     async def _update_continuously(self):
+        placeholder = st.empty()
         while True:
-            await asyncio.sleep(CONFIG["refresh_delay"])
             self._update(get_states())
+            for _ in range(CONFIG["refresh_delay"]):
+                # Allow this thread to be killed
+                placeholder.empty()
+                await asyncio.sleep(1)
