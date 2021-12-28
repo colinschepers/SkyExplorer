@@ -29,7 +29,7 @@ class OpenSkyApi:
         "longitude": lambda x: float(x) if x else None,
         "latitude": lambda x: float(x) if x else None,
         "baro_altitude": lambda x: float(x) if x else 0,
-        "on_ground": bool,
+        "on_ground": None,
         "velocity": lambda x: float(x) if x else 0,
         "azimuth": lambda x: 360 - float(x) if x else None,
         "vertical_rate": None,
