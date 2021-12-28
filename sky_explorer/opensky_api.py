@@ -40,8 +40,14 @@ class OpenSkyApi:
         "position_source": None,
         "_": None
     }
-    TRACK_COLUMNS = ["timestamp", "latitude", "longitude", "altitude", "track", "on_ground"]
-    AIRCRAFT_COLUMNS = ["first_seen", "last_seen", "icao24", "callsign", "est_departure_airport", "est_arrival_airport"]
+    AIRCRAFT_COLUMNS = {
+        "icao24": ("icao24", str),
+        "callsign": ("callsign", lambda x: str(x).strip()),
+        "firstSeen": ("first_seen", lambda x: datetime.fromtimestamp(x)),
+        "lastSeen": ("last_seen", lambda x: datetime.fromtimestamp(x)),
+        "estDepartureAirport": ("departure_airport", str),
+        "estArrivalAirport": ("arrival_airport", str),
+    }
 
     def __init__(
             self,
@@ -99,7 +105,7 @@ class OpenSkyApi:
             params.update({"lamin": bounds[0], "lamax": bounds[1], "lomin": bounds[2], "lomax": bounds[3]})
 
         if json := self._get_json("/states/all", params=params):
-            data = [self._parse_instance(x, self.STATE_COLUMNS) for x in json["states"]]
+            data = [self._parse_state(x) for x in json["states"]]
             return pd.DataFrame(data).dropna().set_index('icao24')
         return None
 
@@ -130,18 +136,11 @@ class OpenSkyApi:
         - A waypoint is added if the on-ground state changes.
         Tracks are strongly related to flights. Internally, we compute flights
         and tracks within the same processing step. As such, it may be
-        benificial to retrieve a list of flights with the API methods from
+        beneficial to retrieve a list of flights with the API methods from
         above, and use these results with the given time stamps to retrieve
         detailed track information.
         """
-        params = {"time": int(time.timestamp()) if time is not None else 0, "icao24": icao24}
-        if json := self._get_json("/tracks/all", params=params):
-            df = pd.DataFrame((dict(zip(self.TRACK_COLUMNS, x)) for x in json["path"]))
-            df = df.assign(icao24=json["icao24"], callsign=json["callsign"])
-            df = self._format_dataframe(df)
-            df = self._format_history(df)
-            return df
-        return None
+        raise NotImplementedError
 
     def get_aircraft(
             self,
@@ -160,15 +159,12 @@ class OpenSkyApi:
         """
         params = {
             "icao24": icao24,
-            "begin": int(begin.timestamp()) if begin is not None else datetime.utcnow() - timedelta(days=1),
-            "end": int(end.timestamp()) if end is not None else datetime.utcnow()
+            "begin": int((begin or datetime(*datetime.utcnow().timetuple()[:3]) - timedelta(days=1)).timestamp()),
+            "end": int((end or datetime(*datetime.utcnow().timetuple()[:3])).timestamp())
         }
-        if json := self._get_json("/tracks/all", params=params):
-            df = pd.DataFrame((dict(zip(self.AIRCRAFT_COLUMNS, x)) for x in json))
-            return df.assign(
-                firstSeen=lambda df: pd.to_datetime(df.firstSeen * 1e9).dt.tz_localize("utc"),
-                lastSeen=lambda df: pd.to_datetime(df.lastSeen * 1e9).dt.tz_localize("utc"),
-            ).sort_values("last_seen")
+        if json := self._get_json("/flights/aircraft", params=params):
+            data = sorted((self._parse_aircraft(x) for x in json), key=lambda x: x["last_seen"])
+            return pd.DataFrame(data).set_index('icao24')
         return None
 
     def get_global_coverage(self) -> Optional[Sequence[Tuple[int, int, int]]]:
@@ -194,16 +190,12 @@ class OpenSkyApi:
         """
         params = {
             "icao": icao,
-            "begin": int(begin.timestamp()) if begin is not None else datetime.utcnow() - timedelta(days=1),
-            "end": int(end.timestamp()) if end is not None else datetime.utcnow()
+            "begin": int((begin or datetime.utcnow() - timedelta(days=1)).timestamp()),
+            "end": int((end or datetime.utcnow()).timestamp())
         }
         if json := self._get_json("/flights/arrival", params=params):
-            df = pd.DataFrame((dict(zip(self.AIRCRAFT_COLUMNS, x)) for x in json)).query("callsign == callsign")
-            return df.assign(
-                firstSeen=lambda df: pd.to_datetime(df.firstSeen * 1e9).dt.tz_localize("utc"),
-                lastSeen=lambda df: pd.to_datetime(df.lastSeen * 1e9).dt.tz_localize("utc"),
-                callsign=lambda df: df.callsign.str.strip()
-            ).sort_values("lastSeen")
+            data = sorted((self._parse_aircraft(x) for x in json), key=lambda x: x["last_seen"])
+            return pd.DataFrame(data).set_index('icao24')
         return None
 
     def get_departure(
@@ -225,16 +217,12 @@ class OpenSkyApi:
         """
         params = {
             "icao": icao,
-            "begin": int(begin.timestamp()) if begin is not None else datetime.utcnow() - timedelta(days=1),
-            "end": int(end.timestamp()) if end is not None else datetime.utcnow()
+            "begin": int((begin or datetime.utcnow() - timedelta(days=1)).timestamp()),
+            "end": int((end or datetime.utcnow()).timestamp())
         }
         if json := self._get_json("/flights/departure", params=params):
-            df = pd.DataFrame((dict(zip(self.AIRCRAFT_COLUMNS, x)) for x in json)).query("callsign == callsign")
-            return df.assign(
-                firstSeen=lambda df: pd.to_datetime(df.firstSeen * 1e9).dt.tz_localize("utc"),
-                lastSeen=lambda df: pd.to_datetime(df.lastSeen * 1e9).dt.tz_localize("utc"),
-                callsign=lambda df: df.callsign.str.strip()
-            ).sort_values("lastSeen")
+            data = sorted((self._parse_aircraft(x) for x in json), key=lambda x: x["last_seen"])
+            return pd.DataFrame(data).set_index('icao24')
         return None
 
     @staticmethod
@@ -324,6 +312,8 @@ class OpenSkyApi:
 
         return df
 
-    @staticmethod
-    def _parse_instance(instance: Sequence[Any], fields: Mapping[str, Callable]):
-        return {name: func(value) for value, (name, func) in zip(instance, fields.items()) if func}
+    def _parse_state(self, state: Sequence[Any]):
+        return {name: func(value) for value, (name, func) in zip(state, self.STATE_COLUMNS.items()) if func}
+
+    def _parse_aircraft(self, aircraft: Sequence[Any]):
+        return {self.AIRCRAFT_COLUMNS[key][0]: self.AIRCRAFT_COLUMNS[key][1](value) for key, value in aircraft}
