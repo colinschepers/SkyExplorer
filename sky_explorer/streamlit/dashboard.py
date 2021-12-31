@@ -39,8 +39,10 @@ class Dashboard:
                 )
 
             with st.expander("Filter airplanes", expanded=False):
-                self._airplane_filter.callsign = st.text_input(label="Callsign", value="", max_chars=8,
-                                                               key="airplane_callsign").upper()
+                self._airplane_filter.callsign = st.text_input(
+                    label="Callsign", key="airplane_callsign",
+                    value="", max_chars=8
+                )
                 self._airplane_filter.origin_countries = set(st.multiselect(
                     label="Country of origin", key="airplane_origin_countries",
                     options=airplanes["origin_country"].sort_values().unique(),
@@ -73,7 +75,7 @@ class Dashboard:
                     options=airports["country"].sort_values(key=lambda x: x.apply(get_country_name)).unique(),
                     format_func=get_country_name
                 ))
-                self._airport_filter._type = set(st.multiselect(
+                self._airport_filter.type = set(st.multiselect(
                     label="Type", key="airport_type",
                     options=airports["type"].sort_values().unique(),
                     format_func=lambda x: x.replace('_', ' ').capitalize(),
@@ -127,7 +129,7 @@ class Dashboard:
                (df['velocity'].between(*self._airplane_filter.velocity)) & \
                (df['azimuth'].between(*self._airplane_filter.azimuth))
         if self._airplane_filter.callsign:
-            mask &= df['callsign'].str.contains(self._airplane_filter.callsign)
+            mask &= df['callsign'].str.contains(self._airplane_filter.callsign, case=False)
         if self._airplane_filter.origin_countries:
             mask &= df['origin_country'].isin(self._airplane_filter.origin_countries)
         return df[mask]
@@ -138,7 +140,8 @@ class Dashboard:
                (df['latitude'].between(*self._airport_filter.latitude)) & \
                (df['elevation'].between(*self._airport_filter.elevation))
         if self._airport_filter.name:
-            mask &= df['name'].str.contains(self._airport_filter.name)
+            mask &= df['name'].str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str \
+                .contains(self._airport_filter.name, case=False)
         if self._airport_filter.countries:
             mask &= df['country'].isin(self._airport_filter.countries)
         if self._airport_filter.type:
