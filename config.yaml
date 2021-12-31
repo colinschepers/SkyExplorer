@@ -7,3 +7,9 @@ map:
       width: 64
       height: 64
       anchorY: 64
+  airport:
+    icon:
+      url: "https://img.icons8.com/ios-glyphs/30/fa314a/airport-building.png"
+      width: 64
+      height: 64
+      anchorY: 64
