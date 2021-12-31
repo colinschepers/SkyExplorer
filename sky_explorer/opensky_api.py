@@ -65,7 +65,7 @@ class OpenSkyApi:
             LOGGER.debug(f"Response not OK. Status {response.status_code} - {response.reason}")
         return None
 
-    def get_states(
+    def get_airplanes(
             self,
             time: Optional[datetime] = None,
             icao24: Optional[str] = None,

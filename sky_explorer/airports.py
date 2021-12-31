@@ -21,7 +21,8 @@ class AirportProvider:
             df = df[df.scheduled_service == "yes"]
             df = df[columns.keys()].rename(columns=columns).set_index("icao")
             df[["latitude", "longitude"]] = df[["latitude", "longitude"]].fillna(0)
-            df[["country"]] = df[["country"]].fillna("")
+            df = df.dropna()
+            df = df.astype({"elevation": int})
             os.makedirs(CONFIG["data_dir"], exist_ok=True)
             df.to_csv(path)
         return pd.read_csv(path).set_index("icao")
