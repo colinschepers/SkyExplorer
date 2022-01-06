@@ -1,5 +1,4 @@
 from enum import Enum
-from idlelib import tooltip
 
 import pandas as pd
 import pydeck as pdk
