@@ -1,8 +1,6 @@
 import logging
-import time
-from collections import defaultdict
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Sequence, Dict, Any, Mapping, Callable
+from typing import Optional, Tuple, Sequence, Dict, Any, Mapping
 
 import pandas as pd
 import requests
@@ -46,7 +44,7 @@ class OpenSkyApi:
         "firstSeen": ("first_seen", lambda x: datetime.fromtimestamp(x)),
         "lastSeen": ("last_seen", lambda x: datetime.fromtimestamp(x)),
         "estDepartureAirport": ("departure_airport", str),
-        "estArrivalAirport": ("arrival_airport", str),
+        "estArrivalAirport": ("arrival_airport", str)
     }
 
     def __init__(
@@ -174,7 +172,7 @@ class OpenSkyApi:
 
     def get_arrival(
             self,
-            icao: str,
+            airport: str,
             begin: Optional[datetime] = None,
             end: Optional[datetime] = None,
     ) -> Optional[pd.DataFrame]:
@@ -189,8 +187,8 @@ class OpenSkyApi:
         HTTP stats 404 - Not found is returned with an empty response body.
         """
         params = {
-            "icao": icao,
-            "begin": int((begin or datetime.utcnow() - timedelta(days=1)).timestamp()),
+            "airport": airport,
+            "begin": int((begin or datetime.utcnow() - timedelta(days=2)).timestamp()),
             "end": int((end or datetime.utcnow()).timestamp())
         }
         if json := self._get_json("/flights/arrival", params=params):
@@ -200,7 +198,7 @@ class OpenSkyApi:
 
     def get_departure(
             self,
-            icao: str,
+            airport: str,
             begin: Optional[datetime] = None,
             end: Optional[datetime] = None,
     ) -> Optional[pd.DataFrame]:
@@ -216,7 +214,7 @@ class OpenSkyApi:
         body.
         """
         params = {
-            "icao": icao,
+            "airport": airport,
             "begin": int((begin or datetime.utcnow() - timedelta(days=1)).timestamp()),
             "end": int((end or datetime.utcnow()).timestamp())
         }
@@ -235,85 +233,9 @@ class OpenSkyApi:
         if lon < -180 or lon > 180:
             raise ValueError("Invalid longitude {:f}! Must be in [-180, 180]".format(lon))
 
-    @staticmethod
-    def _format_dataframe(
-            df: pd.DataFrame,
-    ) -> pd.DataFrame:
-        """
-        This function converts types, strips spaces after callsigns and sorts
-        the DataFrame by timestamp.
-        For some reason, all data arriving from OpenSky are converted to
-        units in metric system. Optionally, you may convert the units back to
-        nautical miles, feet and feet/min.
-        """
-
-        if "callsign" in df.columns and df.callsign.dtype == object:
-            df.callsign = df.callsign.str.strip()
-
-        df.icao24 = (
-            df.icao24.apply(int, base=16)
-                .apply(hex)
-                .str.slice(2)
-                .str.pad(6, fillchar="0")
-        )
-
-        if "squawk" in df.columns:
-            df.squawk = (
-                df.squawk.astype(str)
-                    .str.split(".")
-                    .str[0]
-                    .replace({"nan": None})
-            )
-
-        time_dict: Dict[str, pd.Series] = dict()
-        for colname in [
-            "lastposupdate",
-            "lastposition",
-            "firstseen",
-            "lastseen",
-            "mintime",
-            "maxtime",
-            "time",
-            "timestamp",
-            "day",
-            "hour",
-        ]:
-            if colname in df.columns:
-                time_dict[colname] = pd.to_datetime(df[colname] * 1e9).dt.tz_localize("utc")
-
-        return df.assign(**time_dict)
-
-    @staticmethod
-    def _format_history(
-            df: pd.DataFrame
-    ) -> pd.DataFrame:
-        """
-        This function can be used in tandem with `_format_dataframe()` to
-        convert (historical data specific) column types and optionally convert
-        the units back to nautical miles, feet and feet/min.
-        """
-        # restore all types
-        for column_name in [
-            "lat",
-            "lon",
-            "velocity",
-            "heading",
-            "vertrate",
-            "baroaltitude",
-            "geoaltitude"
-        ]:
-            if column_name in df.columns:
-                df[column_name] = df[column_name].astype(float)
-
-        if "on_ground" in df.columns and df.onground.dtype != bool:
-            df.onground = df.onground == "true"
-            df.alert = df.alert == "true"
-            df.spi = df.spi == "true"
-
-        return df
-
     def _parse_state(self, state: Sequence[Any]):
         return {name: func(value) for value, (name, func) in zip(state, self.STATE_COLUMNS.items()) if func}
 
-    def _parse_aircraft(self, aircraft: Sequence[Any]):
-        return {self.AIRCRAFT_COLUMNS[key][0]: self.AIRCRAFT_COLUMNS[key][1](value) for key, value in aircraft}
+    def _parse_aircraft(self, aircraft: Mapping[str, Any]):
+        return {self.AIRCRAFT_COLUMNS[key][0]: self.AIRCRAFT_COLUMNS[key][1](value)
+                for key, value in aircraft.items() if key in self.AIRCRAFT_COLUMNS}
