@@ -19,7 +19,6 @@ class AirplaneFilter:
 class AirportFilter:
     name: str = None
     countries: Set = None
-    type: str = None
     longitude: FloatRange = None
     latitude: FloatRange = None
-    elevation: FloatRange = None
+    altitude: FloatRange = None

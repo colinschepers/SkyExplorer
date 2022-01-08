@@ -8,7 +8,6 @@ from sky_explorer.config import CONFIG
 from sky_explorer.streamlit.map import MapRenderer, MapStyle
 from sky_explorer.streamlit.models import AirplaneFilter, AirportFilter
 from sky_explorer.streamlit.utils import get_airplanes, get_airports
-from sky_explorer.utils import get_country_name
 
 
 class Dashboard:
@@ -72,24 +71,19 @@ class Dashboard:
                 self._airport_filter.name = st.text_input(label="Name", value="", key="airport_name").lower()
                 self._airport_filter.countries = set(st.multiselect(
                     label="Country", key="airport_countries",
-                    options=airports["country"].sort_values(key=lambda x: x.apply(get_country_name)).unique(),
-                    format_func=get_country_name
-                ))
-                self._airport_filter.type = set(st.multiselect(
-                    label="Type", key="airport_type",
-                    options=airports["type"].sort_values().unique(),
-                    format_func=lambda x: x.replace('_', ' ').capitalize(),
+                    options=airports["country"].sort_values().unique()
                 ))
                 self._airport_filter.longitude = st.slider(
                     label="Longitude (decimal degrees)", key="airport_longitude",
+
                     min_value=-180, max_value=180, value=(-180, 180), step=1,
                 )
                 self._airport_filter.latitude = st.slider(
                     label="Latitude (decimal degrees)", key="airport_latitude",
                     min_value=-90, max_value=90, value=(-90, 90), step=1
                 )
-                self._airport_filter.elevation = st.slider(
-                    label="Elevation (meters)", key="airport_elevation",
+                self._airport_filter.altitude = st.slider(
+                    label="Altitude (meters)", key="airport_altitude",
                     min_value=0, max_value=10000, value=(-100, 10000), step=100
                 )
 
@@ -138,12 +132,10 @@ class Dashboard:
         df = get_airports()
         mask = (df['longitude'].between(*self._airport_filter.longitude)) & \
                (df['latitude'].between(*self._airport_filter.latitude)) & \
-               (df['elevation'].between(*self._airport_filter.elevation))
+               (df['altitude'].between(*self._airport_filter.altitude))
         if self._airport_filter.name:
             mask &= df['name'].str.normalize('NFKD').str.encode('ascii', errors='ignore').str.decode('utf-8').str \
                 .contains(self._airport_filter.name, case=False)
         if self._airport_filter.countries:
             mask &= df['country'].isin(self._airport_filter.countries)
-        if self._airport_filter.type:
-            mask &= df['type'].isin(self._airport_filter.type)
         return df[mask]

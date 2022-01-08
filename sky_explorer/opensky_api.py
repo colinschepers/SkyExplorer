@@ -140,6 +140,31 @@ class OpenSkyApi:
         """
         raise NotImplementedError
 
+    def get_flights(
+            self,
+            begin: Optional[datetime] = None,
+            end: Optional[datetime] = None,
+    ) -> Optional[pd.DataFrame]:
+        """Returns a flight table associated to an aircraft.
+
+        Official documentation
+        ----------------------
+        This API call retrieves flights for a particular aircraft within a
+        certain time interval. Resulting flights departed and arrived within
+        [begin, end]. If no flights are found for the given period, HTTP stats
+        404 - Not found is returned with an empty response body.
+        """
+        if end - begin > timedelta(hours=2):
+            raise ValueError("An interval of more than 2 hours not allowed")
+        params = {
+            "begin": str(int((begin or datetime(*datetime.utcnow().timetuple()[:3]) - timedelta(days=1)).timestamp())),
+            "end": str(int((end or datetime(*datetime.utcnow().timetuple()[:3])).timestamp()))
+        }
+        if json := self._get_json("/flights/all", params=params):
+            data = sorted((self._parse_aircraft(x) for x in json), key=lambda x: x["last_seen"])
+            return pd.DataFrame(data).set_index('icao24')
+        return None
+
     def get_aircraft(
             self,
             icao24: str,
