@@ -6,7 +6,9 @@ FloatRange = Tuple[float, float]
 
 @dataclass
 class AirplaneFilter:
+    limit: int = None
     callsign: str = None
+    airline: str = None
     origin_countries: Set = None
     longitude: FloatRange = None
     latitude: FloatRange = None
@@ -17,9 +19,9 @@ class AirplaneFilter:
 
 @dataclass
 class AirportFilter:
+    limit: int = None
     name: str = None
     countries: Set = None
-    type: str = None
     longitude: FloatRange = None
     latitude: FloatRange = None
-    elevation: FloatRange = None
+    altitude: FloatRange = None
