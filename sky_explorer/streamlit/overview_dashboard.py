@@ -1,4 +1,5 @@
 import asyncio
+from datetime import datetime, timedelta
 from operator import attrgetter
 
 import pandas as pd
@@ -8,12 +9,12 @@ from sky_explorer.config import CONFIG
 from sky_explorer.streamlit.map import MapRenderer, MapStyle
 from sky_explorer.streamlit.models import AirplaneFilter, AirportFilter
 from sky_explorer.streamlit.utils import get_airplanes, get_airports
-from sky_explorer.utils import sort_by_location
+from sky_explorer.utils import sort_by_location, predict_airplanes
 
 
 class OverviewDashboard:
     def __init__(self):
-        self._do_update_continuously = False
+        self._do_animate = False
         self._latlon_of_interest = None
         self._map_renderer = MapRenderer()
         self._st_airplanes = None
@@ -27,10 +28,10 @@ class OverviewDashboard:
 
         with st.sidebar:
             with st.expander("Settings", expanded=False):
-                self._do_update_continuously = st.checkbox(
-                    label="Update continuously",
-                    value=False,
-                    key="_do_update_continuously"
+                self._do_animate = st.checkbox(
+                    label="Animation",
+                    value=True,
+                    key="do_animate"
                 )
 
                 cities_of_interest = list(airports["city"].sort_values().unique())
@@ -52,7 +53,7 @@ class OverviewDashboard:
             with st.expander("Filter airplanes", expanded=False):
                 self._airplane_filter.limit = st.slider(
                     label="Limit", key="airplane_limit",
-                    min_value=0, max_value=10000, value=10000, step=100,
+                    min_value=0, max_value=10000, value=10000, step=1,
                 )
                 self._airplane_filter.callsign = st.text_input(
                     label="Callsign", key="airplane_callsign",
@@ -76,11 +77,11 @@ class OverviewDashboard:
                 )
                 self._airplane_filter.altitude = st.slider(
                     label="Altitude (meters)", key="airplane_altitude",
-                    min_value=0, max_value=30000, value=(0, 30000), step=100,
+                    min_value=0, max_value=30000, value=(0, 30000), step=1,
                 )
                 self._airplane_filter.velocity = st.slider(
                     label="Velocity (m/s)", key="airplane_velocity",
-                    min_value=0, max_value=500, value=(0, 500), step=10
+                    min_value=0, max_value=500, value=(0, 500), step=1
                 )
                 self._airplane_filter.azimuth = st.slider(
                     label="Azimuth (decimal degrees)", key="airplane_azimuth",
@@ -90,7 +91,7 @@ class OverviewDashboard:
             with st.expander("Filter airports", expanded=False):
                 self._airport_filter.limit = st.slider(
                     label="Limit", key="airport_limit",
-                    min_value=0, max_value=10000, value=10000, step=100,
+                    min_value=0, max_value=10000, value=10000, step=1,
                 )
                 self._airport_filter.name = st.text_input(label="Name", value="", key="airport_name").lower()
                 self._airport_filter.countries = set(st.multiselect(
@@ -107,7 +108,7 @@ class OverviewDashboard:
                 )
                 self._airport_filter.altitude = st.slider(
                     label="Altitude (meters)", key="airport_altitude",
-                    min_value=0, max_value=10000, value=(-100, 10000), step=100
+                    min_value=0, max_value=10000, value=(-100, 10000), step=1
                 )
 
         st.title("Overview")
@@ -117,29 +118,23 @@ class OverviewDashboard:
         st.subheader("Airports")
         self._st_airports = st.empty()
 
-        if self._do_update_continuously:
-            asyncio.run(self._update_continuously())
+        if self._do_animate:
+            asyncio.run(self._animate())
         else:
-            self._update()
+            self._update(self._get_filtered_airplanes(), self._get_filtered_airports())
 
-    def _update(self):
-        airplanes = self.get_filtered_airplanes()
-        airports = self.get_filtered_airports()
+    def _update(self, airplanes: pd.DataFrame, airports: pd.DataFrame):
+        airplanes = predict_airplanes(airplanes)
         self._map_renderer.update(airplanes, airports)
-        self._st_airplanes.dataframe(airplanes)
+        self._st_airplanes.dataframe(airplanes.drop(columns="time_position"))
         self._st_airports.dataframe(airports)
 
-    async def _update_continuously(self):
-        placeholder = st.empty()
+    async def _animate(self):
         while True:
-            self._update()
-            for _ in range(CONFIG["refresh_delay"]):
-                # Allow this thread to be killed by streamlit by calling streamlit code
-                placeholder.empty()
-                await asyncio.sleep(1)
+            self._update(self._get_filtered_airplanes(), self._get_filtered_airports())
 
-    def get_filtered_airplanes(self) -> pd.DataFrame:
-        airplanes = get_airplanes(use_cache=not self._update_continuously)
+    def _get_filtered_airplanes(self) -> pd.DataFrame:
+        airplanes = get_airplanes(use_cache=not self._animate)
 
         mask = (airplanes['longitude'].between(*self._airplane_filter.longitude)) & \
                (airplanes['latitude'].between(*self._airplane_filter.latitude)) & \
@@ -152,11 +147,10 @@ class OverviewDashboard:
             mask &= airplanes['airline'].str.contains(self._airplane_filter.airline, case=False)
         if self._airplane_filter.origin_countries:
             mask &= airplanes['origin_country'].isin(self._airplane_filter.origin_countries)
-        airplanes = airplanes[mask]
 
-        return sort_by_location(airplanes, self._latlon_of_interest).head(self._airplane_filter.limit)
+        return sort_by_location(airplanes[mask], self._latlon_of_interest).head(self._airplane_filter.limit)
 
-    def get_filtered_airports(self) -> pd.DataFrame:
+    def _get_filtered_airports(self) -> pd.DataFrame:
         airports = get_airports()
 
         mask = (airports['longitude'].between(*self._airport_filter.longitude)) & \
@@ -167,6 +161,5 @@ class OverviewDashboard:
                 .decode('utf-8').str.contains(self._airport_filter.name, case=False)
         if self._airport_filter.countries:
             mask &= airports['country'].isin(self._airport_filter.countries)
-        airports = airports[mask]
 
-        return sort_by_location(airports, self._latlon_of_interest).head(self._airport_filter.limit)
+        return sort_by_location(airports[mask], self._latlon_of_interest).head(self._airport_filter.limit)

@@ -22,7 +22,8 @@ class OpenSkyApi:
         "icao24": str,
         "callsign": lambda x: str(x).strip(),
         "origin_country": str,
-        "time_position": None,
+        "time_position": lambda x: datetime.fromtimestamp(x) if x is not None
+            else datetime.now() - timedelta(seconds=15),
         "last_contact": None,
         "longitude": lambda x: float(x) if x else None,
         "latitude": lambda x: float(x) if x else None,
@@ -56,11 +57,14 @@ class OpenSkyApi:
         self._session = requests.Session()
 
     def _get_json(self, url_suffix: str, params: Mapping[str, str] = None):
-        response = requests.get(f"{self.BASE_URL}{url_suffix}", auth=self._auth, params=params, timeout=15)
-        if response.status_code == 200:
-            return response.json()
-        else:
-            LOGGER.debug(f"Response not OK. Status {response.status_code} - {response.reason}")
+        try:
+            response = requests.get(f"{self.BASE_URL}{url_suffix}", auth=self._auth, params=params, timeout=15)
+            if response.status_code == 200:
+                return response.json()
+            else:
+                LOGGER.debug(f"Response not OK. Status {response.status_code} - {response.reason}")
+        except Exception as error:
+            LOGGER.debug(f"Request failed: {str(error)}")
         return None
 
     def get_airplanes(
