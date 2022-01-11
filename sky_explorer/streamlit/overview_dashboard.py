@@ -34,7 +34,7 @@ class OverviewDashboard:
             with st.expander("Settings", expanded=False):
                 self._do_animate = st.checkbox(
                     label="Animation",
-                    value=True,
+                    value=False,
                     key="do_animate"
                 )
 

@@ -26,12 +26,12 @@ class OpenSkyApi:
         "time_position": lambda x: datetime.fromtimestamp(x) if x is not None
             else datetime.now() - timedelta(seconds=15),
         "last_contact": None,
-        "longitude": lambda x: float(x) if x else None,
-        "latitude": lambda x: float(x) if x else None,
-        "baro_altitude": lambda x: float(x) if x else 0,
+        "longitude": lambda x: float(x) if x is not None else None,
+        "latitude": lambda x: float(x) if x is not None else None,
+        "baro_altitude": lambda x: float(x) if x is not None else 0,
         "on_ground": None,
-        "velocity": lambda x: float(x) if x else 0,
-        "azimuth": lambda x: float(x) if x else None,
+        "velocity": lambda x: float(x) if x is not None else 0,
+        "azimuth": lambda x: float(x) if x is not None else 0,
         "vertical_rate": None,
         "sensors": None,
         "geo_altitude": None,
@@ -121,7 +121,7 @@ class OpenSkyApi:
 
         if json := await self._get_json_async("/states/all", params=params):
             data = [self._parse_state(x) for x in json["states"]]
-            return pd.DataFrame(data).dropna().set_index('icao24')
+            return pd.DataFrame(data).set_index('icao24')
         return None
 
     def get_tracks(
