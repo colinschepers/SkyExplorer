@@ -1,13 +1,14 @@
-from typing import Optional
+from datetime import datetime
 
 import pandas as pd
 import streamlit as st
 from PIL import Image
 
+import sky_explorer.airlines
 import sky_explorer.airplanes
 import sky_explorer.airports
-import sky_explorer.airlines
 from sky_explorer.config import CONFIG
+from sky_explorer.streamlit.caching import GLOBAL_CACHE
 
 
 def init_page_layout():
@@ -28,14 +29,18 @@ def init_page_layout():
     )
 
 
-@st.cache(allow_output_mutation=True, show_spinner=False, ttl=CONFIG["refresh_delay"])
-def _get_airplanes() -> Optional[pd.DataFrame]:
-    return sky_explorer.airplanes.get_airplanes()
+async def _get_airplanes() -> pd.DataFrame:
+    if (datetime.now() - GLOBAL_CACHE.get("airplanes_last_query_time", datetime.min)).seconds > CONFIG["data_delay"]:
+        airplanes = await sky_explorer.airplanes.get_airplanes()
+        if airplanes is not None:
+            GLOBAL_CACHE["airplanes_last_query_time"] = datetime.now()
+            GLOBAL_CACHE["airplanes"] = airplanes
+    return GLOBAL_CACHE["airplanes"].copy()
 
 
-def get_airplanes(use_cache: bool = False) -> pd.DataFrame:
-    if "airplanes" not in st.session_state or not use_cache:
-        st.session_state["airplanes"] = _get_airplanes()
+async def get_airplanes(use_session_state: bool = True) -> pd.DataFrame:
+    if "airplanes" not in st.session_state or not use_session_state:
+        st.session_state["airplanes"] = await _get_airplanes()
     return st.session_state["airplanes"]
 
 

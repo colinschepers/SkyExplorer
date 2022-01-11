@@ -14,6 +14,7 @@ from sky_explorer.utils import sort_by_location, predict_airplanes
 
 class OverviewDashboard:
     def __init__(self):
+        self._airplanes = None
         self._do_animate = False
         self._latlon_of_interest = None
         self._map_renderer = MapRenderer()
@@ -23,14 +24,17 @@ class OverviewDashboard:
         self._airport_filter = AirportFilter()
 
     def __call__(self):
-        airplanes = get_airplanes()
+        asyncio.run(self._run())
+
+    async def _run(self):
+        airplanes = await get_airplanes()
         airports = get_airports()
 
         with st.sidebar:
             with st.expander("Settings", expanded=False):
                 self._do_animate = st.checkbox(
                     label="Animation",
-                    value=True,
+                    value=False,
                     key="do_animate"
                 )
 
@@ -111,31 +115,49 @@ class OverviewDashboard:
                     min_value=0, max_value=10000, value=(-100, 10000), step=1
                 )
 
-        st.title("Overview")
-        self._map_renderer.draw(map_style)
+        self._airplanes = self._filter_airplanes(airplanes)
+        airports = self._filter_airports(airports)
+
+        self.st_title = st.title("Overview")
+        self._map_renderer.draw(map_style, airports)
         st.subheader("Airplanes")
         self._st_airplanes = st.empty()
         st.subheader("Airports")
-        self._st_airports = st.empty()
+        st.dataframe(airports)
 
         if self._do_animate:
-            asyncio.run(self._animate())
+            await self._update_dashboard_continuously()
         else:
-            self._update(self._get_filtered_airplanes(), self._get_filtered_airports())
+            self._update_airplanes()
 
-    def _update(self, airplanes: pd.DataFrame, airports: pd.DataFrame):
-        airplanes = predict_airplanes(airplanes)
-        self._map_renderer.update(airplanes, airports)
+    def _update_airplanes(self):
+        airplanes = predict_airplanes(self._airplanes)
+        self._map_renderer.update(airplanes)
         self._st_airplanes.dataframe(airplanes.drop(columns="time_position"))
-        self._st_airports.dataframe(airports)
+        self.st_title.title(f"Overview ({datetime.now().strftime('%Y/%m/%d %H:%M:%S')})")
 
-    async def _animate(self):
+    async def _update_airplane_data(self):
+        airplanes = await get_airplanes(use_session_state=False)
+        self._airplanes = self._filter_airplanes(airplanes)
+
+    async def _update_dashboard_continuously(self):
+        delay = CONFIG["map"]["animation_delay_ms"] / 1000
+        last_update = datetime.min
+        loop = asyncio.get_event_loop()
+
         while True:
-            self._update(self._get_filtered_airplanes(), self._get_filtered_airports())
+            start = datetime.now()
 
-    def _get_filtered_airplanes(self) -> pd.DataFrame:
-        airplanes = get_airplanes(use_cache=not self._animate)
+            if datetime.now() - last_update > timedelta(seconds=CONFIG["data_delay"]):
+                last_update = datetime.now()
+                loop.create_task(self._update_airplane_data())
 
+            self._update_airplanes()
+
+            elapsed = (datetime.now() - start).microseconds / 1000000
+            await asyncio.sleep(max(0.01, delay - elapsed))
+
+    def _filter_airplanes(self, airplanes: pd.DataFrame) -> pd.DataFrame:
         mask = (airplanes['longitude'].between(*self._airplane_filter.longitude)) & \
                (airplanes['latitude'].between(*self._airplane_filter.latitude)) & \
                (airplanes['baro_altitude'].between(*self._airplane_filter.altitude)) & \
@@ -150,9 +172,7 @@ class OverviewDashboard:
 
         return sort_by_location(airplanes[mask], self._latlon_of_interest).head(self._airplane_filter.limit)
 
-    def _get_filtered_airports(self) -> pd.DataFrame:
-        airports = get_airports()
-
+    def _filter_airports(self, airports: pd.DataFrame) -> pd.DataFrame:
         mask = (airports['longitude'].between(*self._airport_filter.longitude)) & \
                (airports['latitude'].between(*self._airport_filter.latitude)) & \
                (airports['altitude'].between(*self._airport_filter.altitude))

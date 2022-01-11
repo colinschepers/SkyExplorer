@@ -2,6 +2,7 @@ from datetime import datetime
 from math import asin, atan2, pi, sin, cos
 from typing import Tuple
 
+import numpy as np
 import pandas as pd
 from haversine import haversine
 
@@ -18,8 +19,8 @@ def sort_by_location(df: pd.DataFrame, latlon: Tuple[float, float]) -> pd.DataFr
     return df.assign(distance=distances).sort_values(by=["distance"]).drop(columns=["distance"])
 
 
-def _predict_next_latlon(lat: float, lon: float, bearing: float, velocity: float, time_position: datetime) \
-        -> Tuple[float, float]:
+def _predict_next_latlon(data: np.array) -> Tuple[float, float]:
+    lat, lon, bearing, velocity, time_position = data
     delta_time = (datetime.now() - time_position).total_seconds()
     distance = velocity * delta_time / 1000
     lat2 = asin(sin(pi / 180 * lat) * cos(distance / EARTH_RADIUS) + cos(pi / 180 * lat)
@@ -31,11 +32,7 @@ def _predict_next_latlon(lat: float, lon: float, bearing: float, velocity: float
 
 
 def predict_airplanes(airplanes: pd.DataFrame) -> pd.DataFrame:
-    def next_latlons(row):
-        params = tuple(row[["latitude", "longitude", "azimuth", "velocity", "time_position"]])
-        lat, lon = _predict_next_latlon(*params)
-        row["latitude"] = lat
-        row["longitude"] = lon
-        return row
-
-    return airplanes.apply(next_latlons, axis=1)
+    airplanes = airplanes.copy()
+    input_values = airplanes[["latitude", "longitude", "azimuth", "velocity", "time_position"]].values
+    airplanes[["latitude", "longitude"]] = np.apply_along_axis(_predict_next_latlon, 1, input_values)
+    return airplanes

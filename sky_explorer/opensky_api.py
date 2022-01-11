@@ -1,7 +1,8 @@
 import logging
 from datetime import datetime, timedelta
-from typing import Optional, Tuple, Sequence, Dict, Any, Mapping
+from typing import Optional, Tuple, Sequence, Any, Mapping
 
+import aiohttp
 import pandas as pd
 import requests
 
@@ -25,12 +26,12 @@ class OpenSkyApi:
         "time_position": lambda x: datetime.fromtimestamp(x) if x is not None
             else datetime.now() - timedelta(seconds=15),
         "last_contact": None,
-        "longitude": lambda x: float(x) if x else None,
-        "latitude": lambda x: float(x) if x else None,
-        "baro_altitude": lambda x: float(x) if x else 0,
+        "longitude": lambda x: float(x) if x is not None else None,
+        "latitude": lambda x: float(x) if x is not None else None,
+        "baro_altitude": lambda x: float(x) if x is not None else 0,
         "on_ground": None,
-        "velocity": lambda x: float(x) if x else 0,
-        "azimuth": lambda x: float(x) if x else None,
+        "velocity": lambda x: float(x) if x is not None else 0,
+        "azimuth": lambda x: float(x) if x is not None else 0,
         "vertical_rate": None,
         "sensors": None,
         "geo_altitude": None,
@@ -67,7 +68,19 @@ class OpenSkyApi:
             LOGGER.debug(f"Request failed: {str(error)}")
         return None
 
-    def get_airplanes(
+    async def _get_json_async(self, url_suffix: str, params: Mapping[str, str] = None):
+        async with aiohttp.ClientSession() as session:
+            try:
+                response = await session.get(f"{self.BASE_URL}{url_suffix}", params=params, timeout=15)
+                if response.status == 200:
+                    return await response.json()
+                else:
+                    LOGGER.debug(f"Response not OK. Status {response.status} - {response.reason}")
+            except Exception as error:
+                LOGGER.debug(f"Request failed: {str(error)}")
+        return None
+
+    async def get_airplanes(
             self,
             time: Optional[datetime] = None,
             icao24: Optional[str] = None,
@@ -94,7 +107,7 @@ class OpenSkyApi:
         That means, if the time parameter was set to t , the API will return
         state vectors for time t−(t mod 5).
         """
-        params = {"time": int(time.timestamp()) if time is not None else 0, "icao24": icao24}
+        params = {"time": int(time.timestamp()) if time is not None else 0, "icao24": icao24 or ''}
 
         if bounds:
             if len(bounds) != 4:
@@ -106,9 +119,9 @@ class OpenSkyApi:
             self._check_lon(bounds[3])
             params.update({"lamin": bounds[0], "lamax": bounds[1], "lomin": bounds[2], "lomax": bounds[3]})
 
-        if json := self._get_json("/states/all", params=params):
+        if json := await self._get_json_async("/states/all", params=params):
             data = [self._parse_state(x) for x in json["states"]]
-            return pd.DataFrame(data).dropna().set_index('icao24')
+            return pd.DataFrame(data).set_index('icao24')
         return None
 
     def get_tracks(

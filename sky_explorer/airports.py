@@ -10,4 +10,4 @@ def get_airports() -> pd.DataFrame:
         "https://raw.githubusercontent.com/jpatokal/openflights/master/data/airports.dat",
         names=columns, header=None, index_col=["icao"], usecols=use_columns
     )
-    return airports.replace("\\N", '').dropna().astype({"latitude": float, "longitude": float, "altitude": int})
+    return airports.replace("\\N", '').astype({"latitude": float, "longitude": float, "altitude": int})
