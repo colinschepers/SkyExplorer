@@ -118,7 +118,7 @@ class OverviewDashboard:
         self._airplanes = self._filter_airplanes(airplanes)
         airports = self._filter_airports(airports)
 
-        st.title("Overview")
+        self.st_title = st.title("Overview")
         self._map_renderer.draw(map_style, airports)
         st.subheader("Airplanes")
         self._st_airplanes = st.empty()
@@ -134,6 +134,7 @@ class OverviewDashboard:
         airplanes = predict_airplanes(self._airplanes)
         self._map_renderer.update(airplanes)
         self._st_airplanes.dataframe(airplanes.drop(columns="time_position"))
+        self.st_title.title(f"Overview ({datetime.now().strftime('%Y/%m/%d %H:%M:%S')})")
 
     async def _update_airplane_data(self):
         airplanes = await get_airplanes(use_session_state=False)
