@@ -9,14 +9,17 @@ from haversine import haversine
 EARTH_RADIUS = 6371
 
 
-def euclidean_distance(latlon1: Tuple[float, float], latlon2: Tuple[float, float]) -> float:
-    return haversine(latlon1, latlon2)
+def _euclidean_distance(data: np.array) -> float:
+    return haversine((data[0], data[1]), (data[2], data[3]))
 
 
 def sort_by_location(df: pd.DataFrame, latlon: Tuple[float, float]) -> pd.DataFrame:
-    distances = df[["latitude", "longitude"]] \
-        .apply(lambda row: euclidean_distance(tuple(row), latlon), axis=1)
-    return df.assign(distance=distances).sort_values(by=["distance"]).drop(columns=["distance"])
+    if len(df):
+        df = df.copy()
+        input_values = np.c_[df[["latitude", "longitude"]].values, np.full((len(df), 2), latlon)]
+        distances = np.apply_along_axis(_euclidean_distance, 1, input_values)
+        return df.assign(distance=distances).sort_values(by=["distance"]).drop(columns=["distance"])
+    return df
 
 
 def _predict_next_latlon(data: np.array) -> Tuple[float, float]:
@@ -32,7 +35,8 @@ def _predict_next_latlon(data: np.array) -> Tuple[float, float]:
 
 
 def predict_airplanes(airplanes: pd.DataFrame) -> pd.DataFrame:
-    airplanes = airplanes.copy()
-    input_values = airplanes[["latitude", "longitude", "azimuth", "velocity", "time_position"]].values
-    airplanes[["latitude", "longitude"]] = np.apply_along_axis(_predict_next_latlon, 1, input_values)
+    if len(airplanes):
+        airplanes = airplanes.copy()
+        input_values = airplanes[["latitude", "longitude", "azimuth", "velocity", "time_position"]].values
+        airplanes[["latitude", "longitude"]] = np.apply_along_axis(_predict_next_latlon, 1, input_values)
     return airplanes
