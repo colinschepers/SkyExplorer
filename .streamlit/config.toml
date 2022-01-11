@@ -1,2 +1,6 @@
 [theme]
 base="dark"
+
+[global]
+# https://discuss.streamlit.io/t/animation-to-show-only-the-last-n-datapoints/1686/3
+minCachedMessageSize = 9999999999999
