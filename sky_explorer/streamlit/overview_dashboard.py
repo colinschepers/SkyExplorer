@@ -141,7 +141,7 @@ class OverviewDashboard:
         self._airplanes = self._filter_airplanes(airplanes)
 
     async def _update_dashboard_continuously(self):
-        delay = CONFIG["map"]["animation_delay_ms"] / 1000
+        delay = CONFIG["map"]["animation_delay"]
         last_update = datetime.min
         loop = asyncio.get_event_loop()
 
