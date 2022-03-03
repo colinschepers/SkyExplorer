@@ -2,6 +2,10 @@
 
 Data Science on a high level.
 
+## Demo
+
+https://share.streamlit.io/colinschepers/skyexplorer
+
 ## Installation
 
 1. Install python (>=3.8)
