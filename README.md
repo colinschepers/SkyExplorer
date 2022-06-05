@@ -10,4 +10,4 @@ https://share.streamlit.io/colinschepers/skyexplorer
 
 1. Install python (>=3.8)
 2. Install dependencies: `pip install -r requirements.txt`
-3. Run the application: `streamlit run main.py`
+3. Run the application: `streamlit run streamlit_app.py`
