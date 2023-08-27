@@ -1,4 +1,5 @@
-from datetime import datetime
+from datetime import datetime, timedelta
+from functools import partial
 from math import asin, atan2, pi, sin, cos
 from typing import Tuple
 
@@ -22,9 +23,9 @@ def sort_by_location(df: pd.DataFrame, latlon: Tuple[float, float]) -> pd.DataFr
     return df
 
 
-def _predict_next_latlon(data: np.array) -> Tuple[float, float]:
+def _predict_next_latlon(data: np.array, time: datetime) -> Tuple[float, float]:
     lat, lon, bearing, velocity, time_position = data
-    delta_time = (datetime.now() - time_position).total_seconds()
+    delta_time = (time - time_position).total_seconds()
     distance = velocity * delta_time / 1000
     lat2 = asin(sin(pi / 180 * lat) * cos(distance / EARTH_RADIUS) + cos(pi / 180 * lat)
                 * sin(distance / EARTH_RADIUS) * cos(pi / 180 * bearing))
@@ -34,9 +35,15 @@ def _predict_next_latlon(data: np.array) -> Tuple[float, float]:
     return 180 / pi * lat2, 180 / pi * lon2
 
 
-def predict_airplanes(airplanes: pd.DataFrame) -> pd.DataFrame:
+def predict_airplanes(airplanes: pd.DataFrame, time: datetime) -> pd.DataFrame:
     if len(airplanes):
         airplanes = airplanes.copy()
         input_values = airplanes[["latitude", "longitude", "azimuth", "velocity", "time_position"]].values
-        airplanes[["latitude", "longitude"]] = np.apply_along_axis(_predict_next_latlon, 1, input_values)
+        airplanes[["latitude", "longitude"]] = np.apply_along_axis(
+            partial(_predict_next_latlon, time=time), 1, input_values
+        )
     return airplanes
+
+
+def round_second(timestamp: datetime) -> datetime:
+    return timestamp - timedelta(microseconds=timestamp.microsecond)

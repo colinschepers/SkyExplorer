@@ -1,43 +1,61 @@
-import asyncio
+import time
 from datetime import datetime, timedelta
 from operator import attrgetter
 
 import pandas as pd
 import streamlit as st
 
-from sky_explorer.config import CONFIG
+from sky_explorer.airports import AirportException
+from sky_explorer.opensky_api import OpenSkyApiException, get_min_time
 from sky_explorer.streamlit.map import MapRenderer, MapStyle
 from sky_explorer.streamlit.models import AirplaneFilter, AirportFilter
-from sky_explorer.streamlit.utils import get_airplanes, get_airports
-from sky_explorer.utils import sort_by_location, predict_airplanes
+from sky_explorer.streamlit.utils import get_airplanes, get_airports, get_from_session_state
+from sky_explorer.utils import sort_by_location, predict_airplanes, round_second
 
 
 class OverviewDashboard:
     def __init__(self):
         self._airplanes = None
-        self._do_animate = False
         self._latlon_of_interest = None
         self._map_renderer = MapRenderer()
         self._st_airplanes = None
         self._st_airports = None
+        self._st_opensky_api_details = None
         self._airplane_filter = AirplaneFilter()
         self._airport_filter = AirportFilter()
 
     def __call__(self):
-        asyncio.run(self._run())
+        try:
+            airplanes = get_airplanes()
+        except OpenSkyApiException as exception:
+            st.warning(str(exception))
+            return
 
-    async def _run(self):
-        airplanes = await get_airplanes()
-        airports = get_airports()
+        try:
+            airports = get_airports()
+        except AirportException as exception:
+            st.warning(str(exception))
+            return
 
         with st.sidebar:
-            with st.expander("Settings", expanded=False):
-                self._do_animate = st.checkbox(
-                    label="Animation",
-                    value=False,
-                    key="do_animate"
-                )
+            with st.expander("Playback", expanded=False):
+                get_from_session_state("animation_speed", lambda: 0)
+                display_time = get_from_session_state("display_time", lambda: round_second(datetime.now()))
 
+                columns = st.columns(5)
+                if columns[0].button("⏮", help="Skip backward one minute"):
+                    st.session_state.display_time = max(get_min_time(), display_time - timedelta(minutes=1))
+                if columns[1].button("⏵", help="Play on normal speed"):
+                    st.session_state.animation_speed = 1
+                if columns[2].button("⏸", help="Pause the animation"):
+                    st.session_state.animation_speed = 0
+                if columns[3].button("⏩", help="Play on double speed"):
+                    st.session_state.animation_speed = 2
+                if columns[4].button("⏭", help="Skip forward one minute"):
+                    st.session_state.display_time = min(round_second(datetime.now()),
+                                                        display_time + timedelta(minutes=1))
+
+            with st.expander("Settings", expanded=False):
                 cities_of_interest = list(airports["city"].sort_values().unique())
                 city_of_interest = st.selectbox(
                     label="City of interest", key="place_of_interest",
@@ -57,7 +75,7 @@ class OverviewDashboard:
             with st.expander("Filter airplanes", expanded=False):
                 self._airplane_filter.limit = st.slider(
                     label="Limit", key="airplane_limit",
-                    min_value=0, max_value=10000, value=10000, step=1,
+                    min_value=0, max_value=10000, value=100, step=1,
                 )
                 self._airplane_filter.callsign = st.text_input(
                     label="Callsign", key="airplane_callsign",
@@ -95,7 +113,7 @@ class OverviewDashboard:
             with st.expander("Filter airports", expanded=False):
                 self._airport_filter.limit = st.slider(
                     label="Limit", key="airport_limit",
-                    min_value=0, max_value=10000, value=10000, step=1,
+                    min_value=0, max_value=10000, value=100, step=1,
                 )
                 self._airport_filter.name = st.text_input(label="Name", value="", key="airport_name").lower()
                 self._airport_filter.countries = set(st.multiselect(
@@ -115,47 +133,54 @@ class OverviewDashboard:
                     min_value=0, max_value=10000, value=(-100, 10000), step=1
                 )
 
-        self._airplanes = self._filter_airplanes(airplanes)
+        self._update_airplane_data(st.session_state.display_time)
         airports = self._filter_airports(airports)
 
-        self.st_title = st.title("Overview")
+        columns = st.columns((0.6, 0.4))
+        self.st_title = columns[0].title("Sky Explorer")
+        self.st_display_time = columns[1].empty()
+
         self._map_renderer.draw(map_style, airports)
+
         st.subheader("Airplanes")
         self._st_airplanes = st.empty()
+
         st.subheader("Airports")
         st.dataframe(airports)
 
-        if self._do_animate:
-            await self._update_dashboard_continuously()
+        if st.session_state.animation_speed == 0:
+            display_time = get_from_session_state("display_time", lambda: round_second(datetime.now()))
+            self._render_airplanes(display_time)
         else:
-            self._update_airplanes()
+            self._update_dashboard_continuously()
 
-    def _update_airplanes(self):
-        airplanes = predict_airplanes(self._airplanes)
-        self._map_renderer.update(airplanes)
-        self._st_airplanes.dataframe(airplanes.drop(columns="time_position"))
-        self.st_title.title(f"Overview ({datetime.now().strftime('%Y/%m/%d %H:%M:%S')})")
+    def _render_airplanes(self, display_time: datetime):
+        self.st_display_time.markdown(
+            f"<h1 style='text-align: right;'>{display_time.strftime('%Y-%m-%d %H:%M:%S')}</h1>",
+            unsafe_allow_html=True
+        )
+        self._map_renderer.update(self._airplanes)
+        self._st_airplanes.dataframe(self._airplanes.drop(columns="time_position"))
 
-    async def _update_airplane_data(self):
-        airplanes = await get_airplanes(use_session_state=False)
-        self._airplanes = self._filter_airplanes(airplanes)
+    def _update_airplane_data(self, display_time: datetime):
+        filtered_airplanes = self._filter_airplanes(get_airplanes(display_time))
+        self._airplanes = predict_airplanes(filtered_airplanes, display_time)
 
-    async def _update_dashboard_continuously(self):
-        delay = CONFIG["map"]["animation_delay"]
-        last_update = datetime.min
-        loop = asyncio.get_event_loop()
-
+    def _update_dashboard_continuously(self):
         while True:
             start = datetime.now()
 
-            if datetime.now() - last_update > timedelta(seconds=CONFIG["data_delay"]):
-                last_update = datetime.now()
-                loop.create_task(self._update_airplane_data())
+            display_time = get_from_session_state("display_time", lambda: round_second(datetime.now()))
+            self._update_airplane_data(display_time)
+            self._render_airplanes(display_time)
 
-            self._update_airplanes()
+            animation_speed = get_from_session_state("animation_speed", lambda: 0)
+            next_display_time = display_time + timedelta(seconds=animation_speed)
 
-            elapsed = (datetime.now() - start).microseconds / 1000000
-            await asyncio.sleep(max(0.01, delay - elapsed))
+            if datetime.now() - start < timedelta(seconds=1):
+                time.sleep((1000000 - datetime.now().microsecond) / 1000000)
+
+            st.session_state.display_time = next_display_time
 
     def _filter_airplanes(self, airplanes: pd.DataFrame) -> pd.DataFrame:
         mask = (airplanes['longitude'].between(*self._airplane_filter.longitude)) & \

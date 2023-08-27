@@ -1,6 +1,5 @@
-data_delay: 10
+time_resolution: 5
 map:
-  animation_delay: 0.5
   airplane:
     icon:
       url: "https://img.icons8.com/external-others-aquariid/64/ffffff/external-airplane-transportation-others-aquariid.png"

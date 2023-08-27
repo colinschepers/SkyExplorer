@@ -4,32 +4,29 @@ import streamlit as st
 from pandas_profiling import ProfileReport
 from streamlit_pandas_profiling import st_profile_report
 
-from sky_explorer.airplanes import get_airplanes
-from sky_explorer.airports import get_airports
+from sky_explorer.streamlit.utils import get_airplanes, get_airports, get_from_session_state, \
+    get_opensky_api_details
+
+_PROFILE_REPORT_KWARGS = {"dark_mode": True, "interactions": None, "correlations": None}
 
 
 class StatisticsDashboard:
-    def __init__(self):
-        pass
-
     def __call__(self):
         asyncio.run(self._run())
 
     async def _run(self):
         st.title("Statistics")
+        st.subheader("OpenSky API")
+        st.dataframe(get_opensky_api_details())
         st.subheader("Airplanes")
-        st_profile_report(await self.get_airplane_report())
+        st_profile_report(get_from_session_state("airplane_report", self.get_airplane_report))
         st.subheader("Airports")
-        st_profile_report(self.get_airport_report())
+        st_profile_report(get_from_session_state("airport_report", self.get_airport_report))
 
-    async def get_airplane_report(self):
-        if "airplane_report" not in st.session_state:
-            airplanes = await get_airplanes()
-            st.session_state["airplane_report"] = ProfileReport(airplanes)
-        return st.session_state["airplane_report"]
+    @staticmethod
+    def get_airplane_report():
+        return ProfileReport(get_airplanes(), **_PROFILE_REPORT_KWARGS)
 
-    def get_airport_report(self):
-        if "airport_report" not in st.session_state:
-            airports = get_airports()
-            st.session_state["airport_report"] = ProfileReport(airports)
-        return st.session_state["airport_report"]
+    @staticmethod
+    def get_airport_report():
+        return ProfileReport(get_airports(), **_PROFILE_REPORT_KWARGS)
